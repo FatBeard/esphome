@@ -33,16 +33,20 @@ class VBus final : public uart::UARTDevice, public Component {
   void register_listener(VBusListener *listener) { this->listeners_.push_back(listener); }
 
  protected:
-  int state_{0};
+  // A telegram is <sync 0xaa> <9 or 15 byte header> [<6 byte frame> ...]; every other byte is 7-bit,
+  // so a byte with bit 7 set that is not the sync byte always aborts the telegram in progress.
+  enum class ParseState : uint8_t { IDLE, HEADER, FRAMES };
+
+  ParseState state_{ParseState::IDLE};
   std::vector<uint8_t> buffer_;
-  uint8_t protocol_;
-  uint16_t source_;
-  uint16_t dest_;
-  uint16_t command_;
-  uint8_t frames_;
-  uint8_t cframe_;
-  uint8_t fbytes_[6];
-  int fbcount_;
+  uint8_t protocol_{0};
+  uint16_t source_{0};
+  uint16_t dest_{0};
+  uint16_t command_{0};
+  uint8_t frames_{0};
+  uint8_t cframe_{0};
+  uint8_t fbytes_[6]{};
+  uint8_t fbcount_{0};
   std::vector<VBusListener *> listeners_{};
 };
 

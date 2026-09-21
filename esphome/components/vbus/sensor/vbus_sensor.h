@@ -5,125 +5,10 @@
 
 namespace esphome::vbus {
 
-class DeltaSolBSPlusSensor : public VBusListener, public Component {
+// Superset of the values the supported DeltaSol controllers report. A model only wires up the
+// fields it actually has; the rest stay null and are skipped when publishing and logging.
+class DeltaSolSensorBase : public VBusListener, public Component {
  public:
-  void dump_config() override;
-  void set_temperature1_sensor(sensor::Sensor *sensor) { this->temperature1_sensor_ = sensor; }
-  void set_temperature2_sensor(sensor::Sensor *sensor) { this->temperature2_sensor_ = sensor; }
-  void set_temperature3_sensor(sensor::Sensor *sensor) { this->temperature3_sensor_ = sensor; }
-  void set_temperature4_sensor(sensor::Sensor *sensor) { this->temperature4_sensor_ = sensor; }
-  void set_pump_speed1_sensor(sensor::Sensor *sensor) { this->pump_speed1_sensor_ = sensor; }
-  void set_pump_speed2_sensor(sensor::Sensor *sensor) { this->pump_speed2_sensor_ = sensor; }
-  void set_operating_hours1_sensor(sensor::Sensor *sensor) { this->operating_hours1_sensor_ = sensor; }
-  void set_operating_hours2_sensor(sensor::Sensor *sensor) { this->operating_hours2_sensor_ = sensor; }
-  void set_heat_quantity_sensor(sensor::Sensor *sensor) { this->heat_quantity_sensor_ = sensor; }
-  void set_time_sensor(sensor::Sensor *sensor) { this->time_sensor_ = sensor; }
-  void set_version_sensor(sensor::Sensor *sensor) { this->version_sensor_ = sensor; }
-
- protected:
-  sensor::Sensor *temperature1_sensor_{nullptr};
-  sensor::Sensor *temperature2_sensor_{nullptr};
-  sensor::Sensor *temperature3_sensor_{nullptr};
-  sensor::Sensor *temperature4_sensor_{nullptr};
-  sensor::Sensor *pump_speed1_sensor_{nullptr};
-  sensor::Sensor *pump_speed2_sensor_{nullptr};
-  sensor::Sensor *operating_hours1_sensor_{nullptr};
-  sensor::Sensor *operating_hours2_sensor_{nullptr};
-  sensor::Sensor *heat_quantity_sensor_{nullptr};
-  sensor::Sensor *time_sensor_{nullptr};
-  sensor::Sensor *version_sensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
-};
-
-class DeltaSolBS2009Sensor : public VBusListener, public Component {
- public:
-  void dump_config() override;
-  void set_temperature1_sensor(sensor::Sensor *sensor) { this->temperature1_sensor_ = sensor; }
-  void set_temperature2_sensor(sensor::Sensor *sensor) { this->temperature2_sensor_ = sensor; }
-  void set_temperature3_sensor(sensor::Sensor *sensor) { this->temperature3_sensor_ = sensor; }
-  void set_temperature4_sensor(sensor::Sensor *sensor) { this->temperature4_sensor_ = sensor; }
-  void set_pump_speed1_sensor(sensor::Sensor *sensor) { this->pump_speed1_sensor_ = sensor; }
-  void set_pump_speed2_sensor(sensor::Sensor *sensor) { this->pump_speed2_sensor_ = sensor; }
-  void set_operating_hours1_sensor(sensor::Sensor *sensor) { this->operating_hours1_sensor_ = sensor; }
-  void set_operating_hours2_sensor(sensor::Sensor *sensor) { this->operating_hours2_sensor_ = sensor; }
-  void set_heat_quantity_sensor(sensor::Sensor *sensor) { this->heat_quantity_sensor_ = sensor; }
-  void set_time_sensor(sensor::Sensor *sensor) { this->time_sensor_ = sensor; }
-  void set_version_sensor(sensor::Sensor *sensor) { this->version_sensor_ = sensor; }
-
- protected:
-  sensor::Sensor *temperature1_sensor_{nullptr};
-  sensor::Sensor *temperature2_sensor_{nullptr};
-  sensor::Sensor *temperature3_sensor_{nullptr};
-  sensor::Sensor *temperature4_sensor_{nullptr};
-  sensor::Sensor *pump_speed1_sensor_{nullptr};
-  sensor::Sensor *pump_speed2_sensor_{nullptr};
-  sensor::Sensor *operating_hours1_sensor_{nullptr};
-  sensor::Sensor *operating_hours2_sensor_{nullptr};
-  sensor::Sensor *heat_quantity_sensor_{nullptr};
-  sensor::Sensor *time_sensor_{nullptr};
-  sensor::Sensor *version_sensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
-};
-
-class DeltaSolCSensor : public VBusListener, public Component {
- public:
-  void dump_config() override;
-  void set_temperature1_sensor(sensor::Sensor *sensor) { this->temperature1_sensor_ = sensor; }
-  void set_temperature2_sensor(sensor::Sensor *sensor) { this->temperature2_sensor_ = sensor; }
-  void set_temperature3_sensor(sensor::Sensor *sensor) { this->temperature3_sensor_ = sensor; }
-  void set_temperature4_sensor(sensor::Sensor *sensor) { this->temperature4_sensor_ = sensor; }
-  void set_pump_speed1_sensor(sensor::Sensor *sensor) { this->pump_speed1_sensor_ = sensor; }
-  void set_pump_speed2_sensor(sensor::Sensor *sensor) { this->pump_speed2_sensor_ = sensor; }
-  void set_operating_hours1_sensor(sensor::Sensor *sensor) { this->operating_hours1_sensor_ = sensor; }
-  void set_operating_hours2_sensor(sensor::Sensor *sensor) { this->operating_hours2_sensor_ = sensor; }
-  void set_heat_quantity_sensor(sensor::Sensor *sensor) { this->heat_quantity_sensor_ = sensor; }
-  void set_time_sensor(sensor::Sensor *sensor) { this->time_sensor_ = sensor; }
-
- protected:
-  sensor::Sensor *temperature1_sensor_{nullptr};
-  sensor::Sensor *temperature2_sensor_{nullptr};
-  sensor::Sensor *temperature3_sensor_{nullptr};
-  sensor::Sensor *temperature4_sensor_{nullptr};
-  sensor::Sensor *pump_speed1_sensor_{nullptr};
-  sensor::Sensor *pump_speed2_sensor_{nullptr};
-  sensor::Sensor *operating_hours1_sensor_{nullptr};
-  sensor::Sensor *operating_hours2_sensor_{nullptr};
-  sensor::Sensor *heat_quantity_sensor_{nullptr};
-  sensor::Sensor *time_sensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
-};
-
-class DeltaSolCS2Sensor : public VBusListener, public Component {
- public:
-  void dump_config() override;
-  void set_temperature1_sensor(sensor::Sensor *sensor) { this->temperature1_sensor_ = sensor; }
-  void set_temperature2_sensor(sensor::Sensor *sensor) { this->temperature2_sensor_ = sensor; }
-  void set_temperature3_sensor(sensor::Sensor *sensor) { this->temperature3_sensor_ = sensor; }
-  void set_temperature4_sensor(sensor::Sensor *sensor) { this->temperature4_sensor_ = sensor; }
-  void set_pump_speed_sensor(sensor::Sensor *sensor) { this->pump_speed_sensor_ = sensor; }
-  void set_operating_hours_sensor(sensor::Sensor *sensor) { this->operating_hours_sensor_ = sensor; }
-  void set_heat_quantity_sensor(sensor::Sensor *sensor) { this->heat_quantity_sensor_ = sensor; }
-  void set_version_sensor(sensor::Sensor *sensor) { this->version_sensor_ = sensor; }
-
- protected:
-  sensor::Sensor *temperature1_sensor_{nullptr};
-  sensor::Sensor *temperature2_sensor_{nullptr};
-  sensor::Sensor *temperature3_sensor_{nullptr};
-  sensor::Sensor *temperature4_sensor_{nullptr};
-  sensor::Sensor *pump_speed_sensor_{nullptr};
-  sensor::Sensor *operating_hours_sensor_{nullptr};
-  sensor::Sensor *heat_quantity_sensor_{nullptr};
-  sensor::Sensor *version_sensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
-};
-
-class DeltaSolCS4Sensor : public VBusListener, public Component {
- public:
-  void dump_config() override;
   void set_temperature1_sensor(sensor::Sensor *sensor) { this->temperature1_sensor_ = sensor; }
   void set_temperature2_sensor(sensor::Sensor *sensor) { this->temperature2_sensor_ = sensor; }
   void set_temperature3_sensor(sensor::Sensor *sensor) { this->temperature3_sensor_ = sensor; }
@@ -133,6 +18,9 @@ class DeltaSolCS4Sensor : public VBusListener, public Component {
   void set_pump_speed2_sensor(sensor::Sensor *sensor) { this->pump_speed2_sensor_ = sensor; }
   void set_operating_hours1_sensor(sensor::Sensor *sensor) { this->operating_hours1_sensor_ = sensor; }
   void set_operating_hours2_sensor(sensor::Sensor *sensor) { this->operating_hours2_sensor_ = sensor; }
+  // Single relay models (CS2) use the unnumbered names of the first pump / hour counter.
+  void set_pump_speed_sensor(sensor::Sensor *sensor) { this->pump_speed1_sensor_ = sensor; }
+  void set_operating_hours_sensor(sensor::Sensor *sensor) { this->operating_hours1_sensor_ = sensor; }
   void set_heat_quantity_sensor(sensor::Sensor *sensor) { this->heat_quantity_sensor_ = sensor; }
   void set_time_sensor(sensor::Sensor *sensor) { this->time_sensor_ = sensor; }
   void set_version_sensor(sensor::Sensor *sensor) { this->version_sensor_ = sensor; }
@@ -153,71 +41,60 @@ class DeltaSolCS4Sensor : public VBusListener, public Component {
   sensor::Sensor *version_sensor_{nullptr};
   sensor::Sensor *flow_rate_sensor_{nullptr};
 
+  void dump_sensors_(const char *model);
+};
+
+class DeltaSolBSPlusSensor final : public DeltaSolSensorBase {
+ public:
+  void dump_config() override { this->dump_sensors_("Deltasol BS Plus"); }
+
+ protected:
   void handle_message(std::vector<uint8_t> &message) override;
 };
 
-class DeltaSolCSPlusSensor : public VBusListener, public Component {
+class DeltaSolBS2009Sensor final : public DeltaSolSensorBase {
  public:
-  void dump_config() override;
-  void set_temperature1_sensor(sensor::Sensor *sensor) { this->temperature1_sensor_ = sensor; }
-  void set_temperature2_sensor(sensor::Sensor *sensor) { this->temperature2_sensor_ = sensor; }
-  void set_temperature3_sensor(sensor::Sensor *sensor) { this->temperature3_sensor_ = sensor; }
-  void set_temperature4_sensor(sensor::Sensor *sensor) { this->temperature4_sensor_ = sensor; }
-  void set_temperature5_sensor(sensor::Sensor *sensor) { this->temperature5_sensor_ = sensor; }
-  void set_pump_speed1_sensor(sensor::Sensor *sensor) { this->pump_speed1_sensor_ = sensor; }
-  void set_pump_speed2_sensor(sensor::Sensor *sensor) { this->pump_speed2_sensor_ = sensor; }
-  void set_operating_hours1_sensor(sensor::Sensor *sensor) { this->operating_hours1_sensor_ = sensor; }
-  void set_operating_hours2_sensor(sensor::Sensor *sensor) { this->operating_hours2_sensor_ = sensor; }
-  void set_heat_quantity_sensor(sensor::Sensor *sensor) { this->heat_quantity_sensor_ = sensor; }
-  void set_time_sensor(sensor::Sensor *sensor) { this->time_sensor_ = sensor; }
-  void set_version_sensor(sensor::Sensor *sensor) { this->version_sensor_ = sensor; }
-  void set_flow_rate_sensor(sensor::Sensor *sensor) { this->flow_rate_sensor_ = sensor; }
+  void dump_config() override { this->dump_sensors_("Deltasol BS 2009"); }
 
  protected:
-  sensor::Sensor *temperature1_sensor_{nullptr};
-  sensor::Sensor *temperature2_sensor_{nullptr};
-  sensor::Sensor *temperature3_sensor_{nullptr};
-  sensor::Sensor *temperature4_sensor_{nullptr};
-  sensor::Sensor *temperature5_sensor_{nullptr};
-  sensor::Sensor *pump_speed1_sensor_{nullptr};
-  sensor::Sensor *pump_speed2_sensor_{nullptr};
-  sensor::Sensor *operating_hours1_sensor_{nullptr};
-  sensor::Sensor *operating_hours2_sensor_{nullptr};
-  sensor::Sensor *heat_quantity_sensor_{nullptr};
-  sensor::Sensor *time_sensor_{nullptr};
-  sensor::Sensor *version_sensor_{nullptr};
-  sensor::Sensor *flow_rate_sensor_{nullptr};
-
   void handle_message(std::vector<uint8_t> &message) override;
 };
 
-class DeltaSolBS2Sensor : public VBusListener, public Component {
+class DeltaSolCSensor final : public DeltaSolSensorBase {
  public:
-  void dump_config() override;
-
-  void set_temperature1_sensor(sensor::Sensor *sensor) { this->temperature1_sensor_ = sensor; }
-  void set_temperature2_sensor(sensor::Sensor *sensor) { this->temperature2_sensor_ = sensor; }
-  void set_temperature3_sensor(sensor::Sensor *sensor) { this->temperature3_sensor_ = sensor; }
-  void set_temperature4_sensor(sensor::Sensor *sensor) { this->temperature4_sensor_ = sensor; }
-  void set_pump_speed1_sensor(sensor::Sensor *sensor) { this->pump_speed1_sensor_ = sensor; }
-  void set_pump_speed2_sensor(sensor::Sensor *sensor) { this->pump_speed2_sensor_ = sensor; }
-  void set_operating_hours1_sensor(sensor::Sensor *sensor) { this->operating_hours1_sensor_ = sensor; }
-  void set_operating_hours2_sensor(sensor::Sensor *sensor) { this->operating_hours2_sensor_ = sensor; }
-  void set_heat_quantity_sensor(sensor::Sensor *sensor) { this->heat_quantity_sensor_ = sensor; }
-  void set_version_sensor(sensor::Sensor *sensor) { this->version_sensor_ = sensor; }
+  void dump_config() override { this->dump_sensors_("Deltasol C"); }
 
  protected:
-  sensor::Sensor *temperature1_sensor_{nullptr};
-  sensor::Sensor *temperature2_sensor_{nullptr};
-  sensor::Sensor *temperature3_sensor_{nullptr};
-  sensor::Sensor *temperature4_sensor_{nullptr};
-  sensor::Sensor *pump_speed1_sensor_{nullptr};
-  sensor::Sensor *pump_speed2_sensor_{nullptr};
-  sensor::Sensor *operating_hours1_sensor_{nullptr};
-  sensor::Sensor *operating_hours2_sensor_{nullptr};
-  sensor::Sensor *heat_quantity_sensor_{nullptr};
-  sensor::Sensor *version_sensor_{nullptr};
+  void handle_message(std::vector<uint8_t> &message) override;
+};
 
+class DeltaSolCS2Sensor final : public DeltaSolSensorBase {
+ public:
+  void dump_config() override { this->dump_sensors_("Deltasol CS2"); }
+
+ protected:
+  void handle_message(std::vector<uint8_t> &message) override;
+};
+
+class DeltaSolCS4Sensor : public DeltaSolSensorBase {
+ public:
+  void dump_config() override { this->dump_sensors_("Deltasol CS4"); }
+
+ protected:
+  void handle_message(std::vector<uint8_t> &message) override;
+};
+
+// The CS Plus reports the same payload layout as the CS4.
+class DeltaSolCSPlusSensor final : public DeltaSolCS4Sensor {
+ public:
+  void dump_config() override { this->dump_sensors_("Deltasol CS Plus"); }
+};
+
+class DeltaSolBS2Sensor final : public DeltaSolSensorBase {
+ public:
+  void dump_config() override { this->dump_sensors_("DeltaSol BS/2 (DrainBack)"); }
+
+ protected:
   void handle_message(std::vector<uint8_t> &message) override;
 };
 

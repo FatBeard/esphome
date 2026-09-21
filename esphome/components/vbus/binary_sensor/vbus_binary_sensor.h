@@ -5,15 +5,30 @@
 
 namespace esphome::vbus {
 
-class DeltaSolBSPlusBSensor final : public VBusListener, public Component {
+// Every supported model reports the four sensor failure flags as one bitmask byte with the same
+// bit order; only the offset of that byte within the payload differs per model.
+class DeltaSolErrorsBSensorBase : public VBusListener, public Component {
  public:
-  void dump_config() override;
-  void set_relay1_bsensor(binary_sensor::BinarySensor *bsensor) { this->relay1_bsensor_ = bsensor; }
-  void set_relay2_bsensor(binary_sensor::BinarySensor *bsensor) { this->relay2_bsensor_ = bsensor; }
   void set_s1_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s1_error_bsensor_ = bsensor; }
   void set_s2_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s2_error_bsensor_ = bsensor; }
   void set_s3_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s3_error_bsensor_ = bsensor; }
   void set_s4_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s4_error_bsensor_ = bsensor; }
+
+ protected:
+  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
+  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
+  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
+  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
+
+  void dump_sensor_errors_(const char *model);
+  void publish_sensor_errors_(const std::vector<uint8_t> &message, size_t offset);
+};
+
+class DeltaSolBSPlusBSensor final : public DeltaSolErrorsBSensorBase {
+ public:
+  void dump_config() override;
+  void set_relay1_bsensor(binary_sensor::BinarySensor *bsensor) { this->relay1_bsensor_ = bsensor; }
+  void set_relay2_bsensor(binary_sensor::BinarySensor *bsensor) { this->relay2_bsensor_ = bsensor; }
   void set_collector_max_bsensor(binary_sensor::BinarySensor *bsensor) { this->collector_max_bsensor_ = bsensor; }
   void set_collector_min_bsensor(binary_sensor::BinarySensor *bsensor) { this->collector_min_bsensor_ = bsensor; }
   void set_collector_frost_bsensor(binary_sensor::BinarySensor *bsensor) { this->collector_frost_bsensor_ = bsensor; }
@@ -24,10 +39,6 @@ class DeltaSolBSPlusBSensor final : public VBusListener, public Component {
  protected:
   binary_sensor::BinarySensor *relay1_bsensor_{nullptr};
   binary_sensor::BinarySensor *relay2_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
   binary_sensor::BinarySensor *collector_max_bsensor_{nullptr};
   binary_sensor::BinarySensor *collector_min_bsensor_{nullptr};
   binary_sensor::BinarySensor *collector_frost_bsensor_{nullptr};
@@ -38,110 +49,57 @@ class DeltaSolBSPlusBSensor final : public VBusListener, public Component {
   void handle_message(std::vector<uint8_t> &message) override;
 };
 
-class DeltaSolBS2009BSensor final : public VBusListener, public Component {
+class DeltaSolBS2009BSensor final : public DeltaSolErrorsBSensorBase {
  public:
   void dump_config() override;
-  void set_s1_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s1_error_bsensor_ = bsensor; }
-  void set_s2_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s2_error_bsensor_ = bsensor; }
-  void set_s3_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s3_error_bsensor_ = bsensor; }
-  void set_s4_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s4_error_bsensor_ = bsensor; }
   void set_frost_protection_active_bsensor(binary_sensor::BinarySensor *bsensor) {
     this->frost_protection_active_bsensor_ = bsensor;
   }
 
  protected:
-  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
   binary_sensor::BinarySensor *frost_protection_active_bsensor_{nullptr};
 
   void handle_message(std::vector<uint8_t> &message) override;
 };
 
-class DeltaSolCBSensor final : public VBusListener, public Component {
+class DeltaSolCBSensor final : public DeltaSolErrorsBSensorBase {
  public:
-  void dump_config() override;
-  void set_s1_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s1_error_bsensor_ = bsensor; }
-  void set_s2_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s2_error_bsensor_ = bsensor; }
-  void set_s3_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s3_error_bsensor_ = bsensor; }
-  void set_s4_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s4_error_bsensor_ = bsensor; }
+  void dump_config() override { this->dump_sensor_errors_("Deltasol C"); }
 
  protected:
-  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
+  void handle_message(std::vector<uint8_t> &message) override { this->publish_sensor_errors_(message, 10); }
 };
 
-class DeltaSolCS2BSensor final : public VBusListener, public Component {
+class DeltaSolCS2BSensor final : public DeltaSolErrorsBSensorBase {
  public:
-  void dump_config() override;
-  void set_s1_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s1_error_bsensor_ = bsensor; }
-  void set_s2_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s2_error_bsensor_ = bsensor; }
-  void set_s3_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s3_error_bsensor_ = bsensor; }
-  void set_s4_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s4_error_bsensor_ = bsensor; }
+  void dump_config() override { this->dump_sensor_errors_("Deltasol CS2"); }
 
  protected:
-  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
+  void handle_message(std::vector<uint8_t> &message) override { this->publish_sensor_errors_(message, 18); }
 };
 
-class DeltaSolCS4BSensor final : public VBusListener, public Component {
+class DeltaSolCS4BSensor final : public DeltaSolErrorsBSensorBase {
  public:
-  void dump_config() override;
-  void set_s1_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s1_error_bsensor_ = bsensor; }
-  void set_s2_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s2_error_bsensor_ = bsensor; }
-  void set_s3_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s3_error_bsensor_ = bsensor; }
-  void set_s4_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s4_error_bsensor_ = bsensor; }
+  void dump_config() override { this->dump_sensor_errors_("Deltasol CS4"); }
 
  protected:
-  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
+  void handle_message(std::vector<uint8_t> &message) override { this->publish_sensor_errors_(message, 20); }
 };
 
-class DeltaSolCSPlusBSensor final : public VBusListener, public Component {
+class DeltaSolCSPlusBSensor final : public DeltaSolErrorsBSensorBase {
  public:
-  void dump_config() override;
-  void set_s1_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s1_error_bsensor_ = bsensor; }
-  void set_s2_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s2_error_bsensor_ = bsensor; }
-  void set_s3_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s3_error_bsensor_ = bsensor; }
-  void set_s4_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s4_error_bsensor_ = bsensor; }
+  void dump_config() override { this->dump_sensor_errors_("Deltasol CS Plus"); }
 
  protected:
-  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
+  void handle_message(std::vector<uint8_t> &message) override { this->publish_sensor_errors_(message, 20); }
 };
 
-class DeltaSolBS2BSensor final : public VBusListener, public Component {
+class DeltaSolBS2BSensor final : public DeltaSolErrorsBSensorBase {
  public:
-  void dump_config() override;
-  void set_s1_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s1_error_bsensor_ = bsensor; }
-  void set_s2_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s2_error_bsensor_ = bsensor; }
-  void set_s3_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s3_error_bsensor_ = bsensor; }
-  void set_s4_error_bsensor(binary_sensor::BinarySensor *bsensor) { this->s4_error_bsensor_ = bsensor; }
+  void dump_config() override { this->dump_sensor_errors_("DeltaSol BS/2 (DrainBack)"); }
 
  protected:
-  binary_sensor::BinarySensor *s1_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s2_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s3_error_bsensor_{nullptr};
-  binary_sensor::BinarySensor *s4_error_bsensor_{nullptr};
-
-  void handle_message(std::vector<uint8_t> &message) override;
+  void handle_message(std::vector<uint8_t> &message) override { this->publish_sensor_errors_(message, 10); }
 };
 
 class VBusCustomSubBSensor;

@@ -29,6 +29,7 @@ from esphome.const import (
     UNIT_PERCENT,
     UNIT_WATT_HOURS,
 )
+from esphome.cpp_generator import MockObjClass
 from esphome.types import ConfigType
 
 from .. import (
@@ -220,7 +221,7 @@ MODELS = {
 }
 
 
-def _model_schema(model_class, fields: list[str]) -> cv.Schema:
+def _model_schema(model_class: MockObjClass, fields: list[str]) -> cv.Schema:
     return cv.COMPONENT_SCHEMA.extend(
         {
             cv.GenerateID(): cv.declare_id(model_class),
@@ -266,8 +267,8 @@ async def to_code(config: ConfigType) -> None:
 
     if config[CONF_MODEL] == CONF_CUSTOM:
         for key in (CONF_COMMAND, CONF_SOURCE, CONF_DEST):
-            if key in config:
-                cg.add(getattr(var, f"set_{key}")(config[key]))
+            if (value := config.get(key)) is not None:
+                cg.add(getattr(var, f"set_{key}")(value))
         sensors = []
         for conf in config[CONF_SENSORS]:
             sens = await sensor.new_sensor(conf)
@@ -285,8 +286,8 @@ async def to_code(config: ConfigType) -> None:
         cg.add(var.set_source(source))
         cg.add(var.set_dest(0x0010))
         for field in fields:
-            if field in config:
-                sens = await sensor.new_sensor(config[field])
+            if (conf := config.get(field)) is not None:
+                sens = await sensor.new_sensor(conf)
                 cg.add(getattr(var, SENSOR_FIELDS[field][1])(sens))
 
     vbus = await cg.get_variable(config[CONF_VBUS_ID])

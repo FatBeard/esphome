@@ -8,7 +8,8 @@ namespace esphome::vbus {
 
 static const char *const TAG = "vbus";
 
-// Longer payloads are truncated in the verbose hex log rather than growing the stack buffer.
+// Longer payloads are truncated in the verbose hex log rather than growing the stack buffer
+// (16 frames * 4 bytes = 64 bytes typical).
 static constexpr size_t VBUS_MAX_LOG_BYTES = 64;
 
 void VBus::dump_config() { ESP_LOGCONFIG(TAG, "VBus:"); }
@@ -36,18 +37,18 @@ void VBus::loop() {
     read_byte(&c);
 
     if (c == 0xaa) {
-      this->state_ = ParseState::HEADER;
+      this->state_ = ParseState::PARSE_STATE_HEADER;
       this->buffer_.clear();
       continue;
     }
     if (c & 0x80) {
-      this->state_ = ParseState::IDLE;
+      this->state_ = ParseState::PARSE_STATE_IDLE;
       continue;
     }
-    if (this->state_ == ParseState::IDLE)
+    if (this->state_ == ParseState::PARSE_STATE_IDLE)
       continue;
 
-    if (this->state_ == ParseState::HEADER) {
+    if (this->state_ == ParseState::PARSE_STATE_HEADER) {
       this->buffer_.push_back(c);
       if (this->buffer_.size() == 7) {
         this->protocol_ = this->buffer_[4];
@@ -56,7 +57,7 @@ void VBus::loop() {
         this->command_ = (this->buffer_[6] << 8) + this->buffer_[5];
       }
       if ((this->protocol_ == 0x20) && (this->buffer_.size() == 15)) {
-        this->state_ = ParseState::IDLE;
+        this->state_ = ParseState::PARSE_STATE_IDLE;
         if (!checksum(this->buffer_.data(), 0, 15)) {
           ESP_LOGE(TAG, "P2 checksum failed");
           continue;
@@ -69,27 +70,27 @@ void VBus::loop() {
       } else if ((this->protocol_ == 0x10) && (this->buffer_.size() == 9)) {
         if (!checksum(this->buffer_.data(), 0, 9)) {
           ESP_LOGE(TAG, "P1 checksum failed");
-          this->state_ = ParseState::IDLE;
+          this->state_ = ParseState::PARSE_STATE_IDLE;
           continue;
         }
         this->frames_ = this->buffer_[7];
         if (this->frames_) {
-          this->state_ = ParseState::FRAMES;
+          this->state_ = ParseState::PARSE_STATE_FRAMES;
           this->cframe_ = 0;
           this->fbcount_ = 0;
           this->buffer_.clear();
         } else {
-          this->state_ = ParseState::IDLE;
+          this->state_ = ParseState::PARSE_STATE_IDLE;
           ESP_LOGD(TAG, "P1 empty message");
         }
       } else if (this->buffer_.size() > 15) {
         ESP_LOGW(TAG, "Unknown protocol 0x%02x, discarding", this->protocol_);
-        this->state_ = ParseState::IDLE;
+        this->state_ = ParseState::PARSE_STATE_IDLE;
       }
       continue;
     }
 
-    if (this->state_ == ParseState::FRAMES) {
+    if (this->state_ == ParseState::PARSE_STATE_FRAMES) {
       this->fbytes_[this->fbcount_++] = c;
       if (this->fbcount_ < 6)
         continue;
@@ -97,7 +98,7 @@ void VBus::loop() {
       if (!checksum(this->fbytes_, 0, 6)) {
         // Dropping just this frame would shift every later frame into the wrong payload offset.
         ESP_LOGE(TAG, "frame checksum failed");
-        this->state_ = ParseState::IDLE;
+        this->state_ = ParseState::PARSE_STATE_IDLE;
         continue;
       }
       septet_spread(this->fbytes_, 0, 4, this->fbytes_[4]);
@@ -113,7 +114,7 @@ void VBus::loop() {
                format_hex_to(hex_buf, this->buffer_.data(), log_bytes));
       for (auto &listener : this->listeners_)
         listener->on_message(this->command_, this->source_, this->dest_, this->buffer_);
-      this->state_ = ParseState::IDLE;
+      this->state_ = ParseState::PARSE_STATE_IDLE;
       continue;
     }
   }

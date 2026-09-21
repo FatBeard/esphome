@@ -2,6 +2,7 @@
 
 #include "../vbus.h"
 #include "esphome/components/sensor/sensor.h"
+#include "esphome/core/log.h"
 
 namespace esphome::vbus {
 
@@ -40,13 +41,16 @@ class DeltaSolSensorBase : public VBusListener, public Component {
   sensor::Sensor *time_sensor_{nullptr};
   sensor::Sensor *version_sensor_{nullptr};
   sensor::Sensor *flow_rate_sensor_{nullptr};
+  // Latches so a mismatched model/truncated telegram warns once instead of on every telegram (~1/s).
+  bool warned_short_message_{false};
 
-  void dump_sensors_(const char *model);
+  void dump_sensors_(const LogString *model);
+  void warn_short_message_(size_t actual, size_t expected);
 };
 
 class DeltaSolBSPlusSensor final : public DeltaSolSensorBase {
  public:
-  void dump_config() override { this->dump_sensors_("Deltasol BS Plus"); }
+  void dump_config() override { this->dump_sensors_(LOG_STR("Deltasol BS Plus")); }
 
  protected:
   void handle_message(std::vector<uint8_t> &message) override;
@@ -54,7 +58,7 @@ class DeltaSolBSPlusSensor final : public DeltaSolSensorBase {
 
 class DeltaSolBS2009Sensor final : public DeltaSolSensorBase {
  public:
-  void dump_config() override { this->dump_sensors_("Deltasol BS 2009"); }
+  void dump_config() override { this->dump_sensors_(LOG_STR("Deltasol BS 2009")); }
 
  protected:
   void handle_message(std::vector<uint8_t> &message) override;
@@ -62,7 +66,7 @@ class DeltaSolBS2009Sensor final : public DeltaSolSensorBase {
 
 class DeltaSolCSensor final : public DeltaSolSensorBase {
  public:
-  void dump_config() override { this->dump_sensors_("Deltasol C"); }
+  void dump_config() override { this->dump_sensors_(LOG_STR("Deltasol C")); }
 
  protected:
   void handle_message(std::vector<uint8_t> &message) override;
@@ -70,7 +74,7 @@ class DeltaSolCSensor final : public DeltaSolSensorBase {
 
 class DeltaSolCS2Sensor final : public DeltaSolSensorBase {
  public:
-  void dump_config() override { this->dump_sensors_("Deltasol CS2"); }
+  void dump_config() override { this->dump_sensors_(LOG_STR("Deltasol CS2")); }
 
  protected:
   void handle_message(std::vector<uint8_t> &message) override;
@@ -78,7 +82,7 @@ class DeltaSolCS2Sensor final : public DeltaSolSensorBase {
 
 class DeltaSolCS4Sensor : public DeltaSolSensorBase {
  public:
-  void dump_config() override { this->dump_sensors_("Deltasol CS4"); }
+  void dump_config() override { this->dump_sensors_(LOG_STR("Deltasol CS4")); }
 
  protected:
   void handle_message(std::vector<uint8_t> &message) override;
@@ -87,12 +91,12 @@ class DeltaSolCS4Sensor : public DeltaSolSensorBase {
 // The CS Plus reports the same payload layout as the CS4.
 class DeltaSolCSPlusSensor final : public DeltaSolCS4Sensor {
  public:
-  void dump_config() override { this->dump_sensors_("Deltasol CS Plus"); }
+  void dump_config() override { this->dump_sensors_(LOG_STR("Deltasol CS Plus")); }
 };
 
 class DeltaSolBS2Sensor final : public DeltaSolSensorBase {
  public:
-  void dump_config() override { this->dump_sensors_("DeltaSol BS/2 (DrainBack)"); }
+  void dump_config() override { this->dump_sensors_(LOG_STR("DeltaSol BS/2 (DrainBack)")); }
 
  protected:
   void handle_message(std::vector<uint8_t> &message) override;

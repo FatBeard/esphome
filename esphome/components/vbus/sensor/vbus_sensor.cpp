@@ -19,17 +19,16 @@ static inline float get_heat_quantity(const std::vector<uint8_t> &message, size_
   return get_u16(message, start) + get_u16(message, start + 2) * 1000.0f + get_u16(message, start + 4) * 1000000.0f;
 }
 
+// See get_heat_quantity() above for the two encodings this component reads.
 static inline float get_heat_quantity32(const std::vector<uint8_t> &message, size_t start) {
   return (static_cast<uint32_t>(get_u16(message, start + 2)) << 16) | get_u16(message, start);
 }
 
-// Payload offsets below are fixed per model, so a short message means the controller is not the
-// configured model or the telegram was truncated; publishing then would read past the buffer.
-static bool message_length_ok(const std::vector<uint8_t> &message, size_t length) {
-  if (message.size() >= length)
-    return true;
-  ESP_LOGW(TAG, "message too short: %zu < %zu", message.size(), length);
-  return false;
+// Payload offsets are fixed per model; a short message means the controller is not the configured
+// model or the telegram was truncated. Callers guard each field individually with this so a
+// telegram missing only the tail fields still publishes the ones that fit.
+static inline bool fits(const std::vector<uint8_t> &message, size_t start, size_t width) {
+  return message.size() >= start + width;
 }
 
 static void publish_if_set(sensor::Sensor *sensor, float value) {
@@ -37,8 +36,15 @@ static void publish_if_set(sensor::Sensor *sensor, float value) {
     sensor->publish_state(value);
 }
 
-void DeltaSolSensorBase::dump_sensors_(const char *model) {
-  ESP_LOGCONFIG(TAG, "%s:", model);
+void DeltaSolSensorBase::warn_short_message_(size_t actual, size_t expected) {
+  if (this->warned_short_message_)
+    return;
+  this->warned_short_message_ = true;
+  ESP_LOGW(TAG, "message too short: %zu < %zu", actual, expected);
+}
+
+void DeltaSolSensorBase::dump_sensors_(const LogString *model) {
+  ESP_LOGCONFIG(TAG, "%s:", LOG_STR_ARG(model));
   LOG_SENSOR("  ", "Temperature 1", this->temperature1_sensor_);
   LOG_SENSOR("  ", "Temperature 2", this->temperature2_sensor_);
   LOG_SENSOR("  ", "Temperature 3", this->temperature3_sensor_);
@@ -55,96 +61,159 @@ void DeltaSolSensorBase::dump_sensors_(const char *model) {
 }
 
 void DeltaSolBSPlusSensor::handle_message(std::vector<uint8_t> &message) {
-  if (!message_length_ok(message, 28))
-    return;
-  publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
-  publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
-  publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
-  publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
-  publish_if_set(this->pump_speed1_sensor_, message[8]);
-  publish_if_set(this->pump_speed2_sensor_, message[9]);
-  publish_if_set(this->time_sensor_, get_u16(message, 12));
-  publish_if_set(this->operating_hours1_sensor_, get_u16(message, 16));
-  publish_if_set(this->operating_hours2_sensor_, get_u16(message, 18));
-  publish_if_set(this->heat_quantity_sensor_, get_heat_quantity(message, 20));
-  publish_if_set(this->version_sensor_, get_u16(message, 26) * 0.01f);
+  if (!fits(message, 0, 28))
+    this->warn_short_message_(message.size(), 28);
+  if (fits(message, 0, 2))
+    publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
+  if (fits(message, 2, 2))
+    publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
+  if (fits(message, 4, 2))
+    publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
+  if (fits(message, 6, 2))
+    publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
+  if (fits(message, 8, 1))
+    publish_if_set(this->pump_speed1_sensor_, message[8]);
+  if (fits(message, 9, 1))
+    publish_if_set(this->pump_speed2_sensor_, message[9]);
+  if (fits(message, 12, 2))
+    publish_if_set(this->time_sensor_, get_u16(message, 12));
+  if (fits(message, 16, 2))
+    publish_if_set(this->operating_hours1_sensor_, get_u16(message, 16));
+  if (fits(message, 18, 2))
+    publish_if_set(this->operating_hours2_sensor_, get_u16(message, 18));
+  if (fits(message, 20, 6))
+    publish_if_set(this->heat_quantity_sensor_, get_heat_quantity(message, 20));
+  if (fits(message, 26, 2))
+    publish_if_set(this->version_sensor_, get_u16(message, 26) * 0.01f);
 }
 
 void DeltaSolBS2009Sensor::handle_message(std::vector<uint8_t> &message) {
-  if (!message_length_ok(message, 34))
-    return;
-  publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
-  publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
-  publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
-  publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
-  publish_if_set(this->pump_speed1_sensor_, message[8]);
-  publish_if_set(this->operating_hours1_sensor_, get_u16(message, 10));
-  publish_if_set(this->pump_speed2_sensor_, message[12]);
-  publish_if_set(this->operating_hours2_sensor_, get_u16(message, 18));
-  publish_if_set(this->time_sensor_, get_u16(message, 22));
-  publish_if_set(this->heat_quantity_sensor_, get_u16(message, 28) + get_u16(message, 30) * 1000.0f);
-  publish_if_set(this->version_sensor_, get_u16(message, 32) * 0.01f);
+  if (!fits(message, 0, 34))
+    this->warn_short_message_(message.size(), 34);
+  if (fits(message, 0, 2))
+    publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
+  if (fits(message, 2, 2))
+    publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
+  if (fits(message, 4, 2))
+    publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
+  if (fits(message, 6, 2))
+    publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
+  if (fits(message, 8, 1))
+    publish_if_set(this->pump_speed1_sensor_, message[8]);
+  if (fits(message, 10, 2))
+    publish_if_set(this->operating_hours1_sensor_, get_u16(message, 10));
+  if (fits(message, 12, 1))
+    publish_if_set(this->pump_speed2_sensor_, message[12]);
+  if (fits(message, 18, 2))
+    publish_if_set(this->operating_hours2_sensor_, get_u16(message, 18));
+  if (fits(message, 22, 2))
+    publish_if_set(this->time_sensor_, get_u16(message, 22));
+  if (fits(message, 28, 4))
+    publish_if_set(this->heat_quantity_sensor_, get_u16(message, 28) + get_u16(message, 30) * 1000.0f);
+  if (fits(message, 32, 2))
+    publish_if_set(this->version_sensor_, get_u16(message, 32) * 0.01f);
 }
 
 void DeltaSolCSensor::handle_message(std::vector<uint8_t> &message) {
-  if (!message_length_ok(message, 24))
-    return;
-  publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
-  publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
-  publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
-  publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
-  publish_if_set(this->pump_speed1_sensor_, message[8]);
-  publish_if_set(this->pump_speed2_sensor_, message[9]);
-  publish_if_set(this->operating_hours1_sensor_, get_u16(message, 12));
-  publish_if_set(this->operating_hours2_sensor_, get_u16(message, 14));
-  publish_if_set(this->heat_quantity_sensor_, get_heat_quantity(message, 16));
-  publish_if_set(this->time_sensor_, get_u16(message, 22));
+  if (!fits(message, 0, 24))
+    this->warn_short_message_(message.size(), 24);
+  if (fits(message, 0, 2))
+    publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
+  if (fits(message, 2, 2))
+    publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
+  if (fits(message, 4, 2))
+    publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
+  if (fits(message, 6, 2))
+    publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
+  if (fits(message, 8, 1))
+    publish_if_set(this->pump_speed1_sensor_, message[8]);
+  if (fits(message, 9, 1))
+    publish_if_set(this->pump_speed2_sensor_, message[9]);
+  if (fits(message, 12, 2))
+    publish_if_set(this->operating_hours1_sensor_, get_u16(message, 12));
+  if (fits(message, 14, 2))
+    publish_if_set(this->operating_hours2_sensor_, get_u16(message, 14));
+  if (fits(message, 16, 6))
+    publish_if_set(this->heat_quantity_sensor_, get_heat_quantity(message, 16));
+  if (fits(message, 22, 2))
+    publish_if_set(this->time_sensor_, get_u16(message, 22));
 }
 
 void DeltaSolCS2Sensor::handle_message(std::vector<uint8_t> &message) {
-  if (!message_length_ok(message, 30))
-    return;
-  publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
-  publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
-  publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
-  publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
-  publish_if_set(this->pump_speed1_sensor_, message[12]);
-  publish_if_set(this->operating_hours1_sensor_, get_u16(message, 14));
-  publish_if_set(this->heat_quantity_sensor_, get_heat_quantity32(message, 24));
-  publish_if_set(this->version_sensor_, get_u16(message, 28) * 0.01f);
+  if (!fits(message, 0, 30))
+    this->warn_short_message_(message.size(), 30);
+  if (fits(message, 0, 2))
+    publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
+  if (fits(message, 2, 2))
+    publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
+  if (fits(message, 4, 2))
+    publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
+  if (fits(message, 6, 2))
+    publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
+  if (fits(message, 12, 1))
+    publish_if_set(this->pump_speed1_sensor_, message[12]);
+  if (fits(message, 14, 2))
+    publish_if_set(this->operating_hours1_sensor_, get_u16(message, 14));
+  if (fits(message, 24, 4))
+    publish_if_set(this->heat_quantity_sensor_, get_heat_quantity32(message, 24));
+  if (fits(message, 28, 2))
+    publish_if_set(this->version_sensor_, get_u16(message, 28) * 0.01f);
 }
 
 void DeltaSolCS4Sensor::handle_message(std::vector<uint8_t> &message) {
-  if (!message_length_ok(message, 40))
-    return;
-  publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
-  publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
-  publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
-  publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
-  publish_if_set(this->pump_speed1_sensor_, message[8]);
-  publish_if_set(this->operating_hours1_sensor_, get_u16(message, 10));
-  publish_if_set(this->pump_speed2_sensor_, message[12]);
-  publish_if_set(this->operating_hours2_sensor_, get_u16(message, 14));
-  publish_if_set(this->time_sensor_, get_u16(message, 22));
-  publish_if_set(this->heat_quantity_sensor_, get_heat_quantity32(message, 28));
-  publish_if_set(this->version_sensor_, get_u16(message, 32) * 0.01f);
-  publish_if_set(this->temperature5_sensor_, get_i16(message, 36) * 0.1f);
-  publish_if_set(this->flow_rate_sensor_, get_u16(message, 38));
+  if (!fits(message, 0, 40))
+    this->warn_short_message_(message.size(), 40);
+  if (fits(message, 0, 2))
+    publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
+  if (fits(message, 2, 2))
+    publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
+  if (fits(message, 4, 2))
+    publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
+  if (fits(message, 6, 2))
+    publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
+  if (fits(message, 8, 1))
+    publish_if_set(this->pump_speed1_sensor_, message[8]);
+  if (fits(message, 10, 2))
+    publish_if_set(this->operating_hours1_sensor_, get_u16(message, 10));
+  if (fits(message, 12, 1))
+    publish_if_set(this->pump_speed2_sensor_, message[12]);
+  if (fits(message, 14, 2))
+    publish_if_set(this->operating_hours2_sensor_, get_u16(message, 14));
+  if (fits(message, 22, 2))
+    publish_if_set(this->time_sensor_, get_u16(message, 22));
+  if (fits(message, 28, 4))
+    publish_if_set(this->heat_quantity_sensor_, get_heat_quantity32(message, 28));
+  if (fits(message, 32, 2))
+    publish_if_set(this->version_sensor_, get_u16(message, 32) * 0.01f);
+  if (fits(message, 36, 2))
+    publish_if_set(this->temperature5_sensor_, get_i16(message, 36) * 0.1f);
+  if (fits(message, 38, 2))
+    publish_if_set(this->flow_rate_sensor_, get_u16(message, 38));
 }
 
 void DeltaSolBS2Sensor::handle_message(std::vector<uint8_t> &message) {
-  if (!message_length_ok(message, 26))
-    return;
-  publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
-  publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
-  publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
-  publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
-  publish_if_set(this->pump_speed1_sensor_, message[8]);
-  publish_if_set(this->pump_speed2_sensor_, message[9]);
-  publish_if_set(this->operating_hours1_sensor_, get_u16(message, 12));
-  publish_if_set(this->operating_hours2_sensor_, get_u16(message, 14));
-  publish_if_set(this->heat_quantity_sensor_, get_heat_quantity(message, 16));
-  publish_if_set(this->version_sensor_, get_u16(message, 24) * 0.01f);
+  if (!fits(message, 0, 26))
+    this->warn_short_message_(message.size(), 26);
+  if (fits(message, 0, 2))
+    publish_if_set(this->temperature1_sensor_, get_i16(message, 0) * 0.1f);
+  if (fits(message, 2, 2))
+    publish_if_set(this->temperature2_sensor_, get_i16(message, 2) * 0.1f);
+  if (fits(message, 4, 2))
+    publish_if_set(this->temperature3_sensor_, get_i16(message, 4) * 0.1f);
+  if (fits(message, 6, 2))
+    publish_if_set(this->temperature4_sensor_, get_i16(message, 6) * 0.1f);
+  if (fits(message, 8, 1))
+    publish_if_set(this->pump_speed1_sensor_, message[8]);
+  if (fits(message, 9, 1))
+    publish_if_set(this->pump_speed2_sensor_, message[9]);
+  if (fits(message, 12, 2))
+    publish_if_set(this->operating_hours1_sensor_, get_u16(message, 12));
+  if (fits(message, 14, 2))
+    publish_if_set(this->operating_hours2_sensor_, get_u16(message, 14));
+  if (fits(message, 16, 6))
+    publish_if_set(this->heat_quantity_sensor_, get_heat_quantity(message, 16));
+  if (fits(message, 24, 2))
+    publish_if_set(this->version_sensor_, get_u16(message, 24) * 0.01f);
 }
 
 void VBusCustomSensor::dump_config() {

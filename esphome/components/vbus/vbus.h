@@ -35,9 +35,9 @@ class VBus final : public uart::UARTDevice, public Component {
  protected:
   // A telegram is <sync 0xaa> <9 or 15 byte header> [<6 byte frame> ...]; every other byte is 7-bit,
   // so a byte with bit 7 set that is not the sync byte always aborts the telegram in progress.
-  enum class ParseState : uint8_t { IDLE, HEADER, FRAMES };
+  enum class ParseState : uint8_t { PARSE_STATE_IDLE, PARSE_STATE_HEADER, PARSE_STATE_FRAMES };
 
-  ParseState state_{ParseState::IDLE};
+  ParseState state_{ParseState::PARSE_STATE_IDLE};
   std::vector<uint8_t> buffer_;
   uint8_t protocol_{0};
   uint16_t source_{0};

@@ -51,10 +51,28 @@ def _ninja_logs(skip_bootloader: bool) -> list[str]:
 
 
 BOOTLOADER_BYPRODUCT = re.compile(r"(^|/build/)bootloader/")
+# The build step of any CMake ExternalProject. One with BUILD_ALWAYS (ESP-IDF's
+# ulp_embed_binary) re-runs on every build, and ninja re-records all of that
+# edge's byproducts with the new end time even though the files are untouched.
+# Real work on them still changes the hashed firmware.
+EXTERNAL_PROJECT_BUILD_STAMP = re.compile(r"-stamp/[^/]+-build$")
 MACRO_CHANGED = (
     "IDF changed __build_process_project_includes; update "
     "IDF_BOOTLOADER_OVERRIDE in esphome/build_gen/espidf.py"
 )
+VERSION_DRIFT = (
+    "ESPHome reads ESP-IDF version {ours!r} from {source} but idf_tools reports "
+    "{theirs!r}; update read_idf_version_{source} in esphome/espidf/framework.py"
+)
+LWIP_NOT_EMPTY = (
+    "lwip source {source} compiles to a non-empty object with {option} off; "
+    "drop it from LWIP_EMPTY_SOURCES in esphome/build_gen/espidf.py"
+)
+LWIP_NOTHING_MATCHED = (
+    "no lwip object matched {regex!r} for {option}; the lwip layout or the "
+    "pattern in esphome/build_gen/espidf.py changed"
+)
+LWIP_NM_FAILED = "nm failed on lwip object {source}: {error}"
 WORK_SUFFIXES = (".obj", ".o", ".a", ".elf", ".map", ".bin", ".ld")
 DEFAULT_GLOB = "tests/test_build_components/build/.esphome/build/*"
 
@@ -83,10 +101,24 @@ def _ninja_mtimes(build_path: Path, logs: list[str]) -> dict[tuple[str, str], st
     for name in logs:
         log = build_path / name
         lines = log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
-        for fields in (line.split("\t") for line in lines if not line.startswith("#")):
-            if len(fields) >= 4 and (
-                name != TOP_NINJA_LOG or not BOOTLOADER_BYPRODUCT.search(fields[3])
-            ):
+        rows = [
+            fields
+            for fields in (
+                line.split("\t") for line in lines if not line.startswith("#")
+            )
+            if len(fields) >= 5
+        ]
+        # Every output of an edge shares its command hash, so the stamp names
+        # the whole external project group.
+        external = {
+            fields[4]
+            for fields in rows
+            if EXTERNAL_PROJECT_BUILD_STAMP.search(fields[3])
+        }
+        for fields in rows:
+            if fields[4] in external:
+                continue
+            if name != TOP_NINJA_LOG or not BOOTLOADER_BYPRODUCT.search(fields[3]):
                 mtimes[name, fields[3]] = fields[2]
     return mtimes
 
@@ -101,6 +133,51 @@ def _log_problems(
             problems.append(f"missing {log}")
         elif not any(k[0] == log and k[1].endswith(WORK_SUFFIXES) for k in mtimes):
             problems.append(f"no build entries parsed from {log}")
+    return problems
+
+
+def _lwip_empty_source_problems(build_path: Path) -> list[str]:
+    """Compile the lwip sources the generated CMakeLists drops; any with
+    symbols is a problem. Leaves the tree configured with every source."""
+    # pylint: disable=protected-access
+    from esphome.build_gen.espidf import LWIP_EMPTY_SOURCES, LWIP_FULL_SOURCES_ENV
+    from esphome.espidf import toolchain
+
+    if (rc := toolchain.run_reconfigure(extra_env={LWIP_FULL_SOURCES_ENV: "1"})) != 0:
+        return [f"CMake configure with every lwip source failed with exit code {rc}"]
+    if rc := toolchain._run_ninja("esp-idf/lwip/liblwip.a", verbose=False, jobs=None):
+        return [f"building every lwip source failed with exit code {rc}"]
+    build = build_path / "build"
+    config = json.loads(
+        (build / "config" / "sdkconfig.json").read_text(encoding="utf-8")
+    )
+    objects = [
+        obj.as_posix().removesuffix(".obj")
+        for obj in (build / "esp-idf" / "lwip").rglob("*.obj")
+    ]
+    nm = toolchain._parse_cmakecache(build / "CMakeCache.txt")["CMAKE_NM"]
+    problems = []
+    for option, regex in LWIP_EMPTY_SOURCES:
+        # Absent means the option is invisible here; the filter keeps those.
+        if config.get(option.removeprefix("CONFIG_"), True):
+            continue
+        matched = [source for source in objects if re.search(regex, source)]
+        if not matched:
+            problems.append(LWIP_NOTHING_MATCHED.format(regex=regex, option=option))
+        for source in matched:
+            name = Path(source).name
+            result = subprocess.run(
+                [nm, "--defined-only", f"{source}.obj"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode:
+                problems.append(
+                    LWIP_NM_FAILED.format(source=name, error=result.stderr.strip())
+                )
+            elif result.stdout.strip():
+                problems.append(LWIP_NOT_EMPTY.format(source=name, option=option))
     return problems
 
 
@@ -127,7 +204,7 @@ def check(build_path: Path) -> list[str]:
     # pylint: disable=protected-access
     from esphome.build_gen.espidf import idf_macro_matches
     from esphome.core import CORE
-    from esphome.espidf import toolchain
+    from esphome.espidf import framework, toolchain
 
     description = json.loads(
         (build_path / "build" / "project_description.json").read_text(encoding="utf-8")
@@ -139,8 +216,18 @@ def check(build_path: Path) -> list[str]:
     CORE.skip_bootloader = skip_bootloader
     # A prior tree's memoized decision must not leak into this one.
     toolchain._cache().skip_bootloader = None
-    if not idf_macro_matches(toolchain._get_idf_path(version)):
+    idf_path = toolchain._get_idf_path(version)
+    if not idf_macro_matches(idf_path):
         return [MACRO_CHANGED]
+    # A managed tree always has version.txt, so the header branch is
+    # compared on its own or it would never be exercised here.
+    theirs = framework.idf_tools_version(idf_path)
+    for source, read in (
+        ("txt", framework.read_idf_version_txt),
+        ("header", framework.read_idf_version_header),
+    ):
+        if (ours := read(idf_path)) != theirs:
+            return [VERSION_DRIFT.format(ours=ours, source=source, theirs=theirs)]
     # ESP-IDF's openthread stamps the configure time into its compile flags;
     # pin it before the env is cached so both configures get the same value.
     os.environ["SOURCE_DATE_EPOCH"] = "0"
@@ -188,7 +275,8 @@ def check(build_path: Path) -> list[str]:
             problems.append(f"idf.py dropped {out} from {log}")
         elif mtimes_before.get(key) != mtimes_after[key]:
             problems.append(f"idf.py rebuilt {out}")
-    return problems
+    # Last: it reconfigures the tree, which would otherwise relink above.
+    return problems or _lwip_empty_source_problems(build_path)
 
 
 def main() -> int:

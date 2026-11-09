@@ -153,6 +153,33 @@ def test_generate_compile_commands_configures_twice(
     assert mock_write.call_args_list[1].args[1] == ["esp_timer", "lwip"]
 
 
+def test_generate_compile_commands_hands_converted_libs_to_arduino_stubs(
+    tmp_path: Path,
+) -> None:
+    """On Arduino the stub generator sees the converted libraries, so a stub
+    sharing a converted library's directory name can point at it instead."""
+    converted = {"esphome/libsodium": {"override_path": str(tmp_path / "libsodium")}}
+    stubs = {"espressif/libsodium": {"version": "*", "override_path": "x"}}
+    with (
+        patch.object(clang_tidy, "_setup_core"),
+        patch.object(clang_tidy, "_convert_pio_libs", return_value=converted),
+        patch.object(
+            clang_tidy, "_arduino_excluded_stubs", return_value=stubs
+        ) as mock_stubs,
+        patch.object(clang_tidy, "_write_tidy_project") as mock_write,
+        patch("esphome.espidf.toolchain.run_reconfigure", return_value=0),
+        patch("esphome.build_gen.espidf.get_available_components", return_value=[]),
+    ):
+        clang_tidy._generate_compile_commands(
+            tmp_path, _settings(target_framework="arduino"), tmp_path / "platformio.ini"
+        )
+
+    mock_stubs.assert_called_once_with(tmp_path, converted)
+    extra_deps = mock_write.call_args_list[0].args[2]
+    assert extra_deps["esphome/libsodium"] == converted["esphome/libsodium"]
+    assert extra_deps["espressif/libsodium"] == stubs["espressif/libsodium"]
+
+
 def test_esphome_manifest_deps_reads_repo_manifest() -> None:
     """Top-level dependency names, independent of the per-dependency rules."""
     manifest = yaml.safe_load(
@@ -188,8 +215,9 @@ def test_convert_pio_libs_arduino_framework_passes_empty_managed(
         path=tmp_path / "other-lib",
     )
 
-    def fake_generate_idf_components(libraries, managed=None):
+    def fake_generate_idf_components(libraries, managed=None, provides=None):
         captured["managed"] = managed
+        captured["provides"] = provides
         return [converted]
 
     monkeypatch.setattr(
@@ -199,6 +227,8 @@ def test_convert_pio_libs_arduino_framework_passes_empty_managed(
     result = _convert_pio_libs(tmp_path / "platformio.ini", "arduino")
 
     assert captured["managed"] == set()
+    # Bundled Arduino names are left to arduino-esp32, as in the real build
+    assert captured["provides"]("Wire") and not captured["provides"]("Adafruit BusIO")
     assert result == {
         "esphome/other-lib": {"override_path": str(tmp_path / "other-lib")}
     }
@@ -215,7 +245,7 @@ def test_convert_pio_libs_arduino_idf_6_passes_manifest_deps(
 
     captured: dict[str, set[str] | None] = {}
 
-    def fake_generate_idf_components(libraries, managed=None):
+    def fake_generate_idf_components(libraries, managed=None, provides=None):
         captured["managed"] = managed
         return []
 
@@ -238,8 +268,9 @@ def test_convert_pio_libs_espidf_framework_passes_manifest_deps(
 
     captured: dict[str, set[str] | None] = {}
 
-    def fake_generate_idf_components(libraries, managed=None):
+    def fake_generate_idf_components(libraries, managed=None, provides=None):
         captured["managed"] = managed
+        captured["provides"] = provides
         return []
 
     monkeypatch.setattr(
@@ -249,6 +280,8 @@ def test_convert_pio_libs_espidf_framework_passes_manifest_deps(
     result = _convert_pio_libs(tmp_path / "platformio.ini", "espidf")
 
     assert captured["managed"] == _esphome_manifest_deps()
+    # ESP-IDF bundles no Arduino libraries
+    assert captured["provides"] is None
     assert "esphome/noise-c" in captured["managed"]
     assert result == {}
 
@@ -282,6 +315,27 @@ def test_arduino_excluded_stubs_skips_components_esphome_manifest_provides(
     assert stub_info["version"] == "*"
     stub_path = Path(stub_info["override_path"])
     assert (stub_path / "CMakeLists.txt").is_file()
+
+
+def test_arduino_excluded_stubs_points_libsodium_at_converted_library(
+    tmp_path: Path,
+) -> None:
+    """Below IDF 6.0 the converted esphome/libsodium shares its directory name
+    with the espressif/libsodium stub; IDF would keep whichever registers last,
+    so the stub entry points at the converted library instead (#20102)."""
+    _set_idf_version(cv.Version(5, 5, 4))
+    converted_path = str(tmp_path / "pio" / "esphome" / "libsodium")
+    converted = {"esphome/libsodium": {"override_path": converted_path}}
+
+    deps = _arduino_excluded_stubs(tmp_path, converted)
+
+    assert deps["espressif/libsodium"] == {
+        "version": "*",
+        "override_path": converted_path,
+    }
+    assert not (tmp_path / "component_stubs" / "libsodium").exists()
+    # Stubs without a converted namesake are unaffected.
+    assert (tmp_path / "component_stubs" / "cbor" / "CMakeLists.txt").is_file()
 
 
 def test_arduino_excluded_stubs_skips_libsodium_from_idf_6(tmp_path: Path) -> None:

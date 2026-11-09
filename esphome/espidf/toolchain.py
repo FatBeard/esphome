@@ -1,8 +1,8 @@
 """ESP-IDF direct build API for ESPHome."""
 
+import contextlib
 from dataclasses import dataclass, field
 import fnmatch
-import hashlib
 import json
 import logging
 import os
@@ -19,6 +19,7 @@ from esphome.const import (
     CONF_SOURCE,
     KEY_ESP32,
     KEY_FLASH_SIZE,
+    KEY_IDF_EXTRA_TARGETS,
     KEY_IDF_VERSION,
     KEY_VARIANT,
 )
@@ -86,8 +87,14 @@ def _get_configured_targets() -> list[str] | None:
     """
     if os.environ.get("CI"):
         return None
-    variant = CORE.data.get(KEY_ESP32, {}).get(KEY_VARIANT)
-    return [variant_to_idf_target(variant)] if variant else None
+    esp32_data = CORE.data.get(KEY_ESP32, {})
+    variant = esp32_data.get(KEY_VARIANT)
+    if not variant:
+        return None
+    # Components may ask for another chip's tools (add_idf_install_target),
+    # e.g. the RISC-V compiler for ULP programs on an Xtensa variant.
+    extra = esp32_data.get(KEY_IDF_EXTRA_TARGETS, ())
+    return [variant_to_idf_target(variant), *sorted(extra)]
 
 
 def _get_esphome_esp_idf_paths(
@@ -125,6 +132,8 @@ def _get_idf_env(version: str | None = None) -> dict[str, str]:
         env_cache[version] = os.environ.copy()
         # Do not leak PYTHONPATH into child env
         env_cache[version].pop("PYTHONPATH", None)
+        # Do not let an inherited IDF_TARGET override the variant
+        env_cache[version].pop("IDF_TARGET", None)
 
         # Use provided IDF framework if available
         if _esphome_manages_idf():
@@ -228,6 +237,8 @@ FILTER_IDF_LINES: list[str] = [
 # click's boolean spellings, which idf.py applies to IDF_CCACHE_ENABLE.
 _CLICK_TRUE = frozenset({"1", "true", "t", "yes", "y", "on"})
 _CMAKECACHE_LINE = re.compile(r"^([^#/:=]+):([^:=]+)=(.*)$")
+_SDKCONFIG_TARGET_LINE = re.compile(r'^CONFIG_IDF_TARGET="([^"]*)"$', re.MULTILINE)
+_TOOLCHAIN_FILE_TARGET = re.compile(r"toolchain-(?:clang-)?(\w+)\.cmake$")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -311,6 +322,54 @@ def tree_skips_bootloader(build_dir: Path) -> bool:
     return cache.get(SKIP_BOOTLOADER_DEFINE) == "1"
 
 
+def _foreign_idf_target(target: str) -> str | None:
+    """Return another IDF target recorded in the CMake caches or sdkconfig."""
+    build_dir = _build_dir()
+    sdkconfig = CORE.relative_build_path(f"sdkconfig.{CORE.name}")
+    found = []
+    for cache_path in (
+        build_dir / "CMakeCache.txt",
+        build_dir / "bootloader" / "CMakeCache.txt",
+    ):
+        with contextlib.suppress(OSError, ValueError):
+            cache = _parse_cmakecache(cache_path)
+            found.append(cache.get("IDF_TARGET"))
+            if m := _TOOLCHAIN_FILE_TARGET.search(
+                cache.get("CMAKE_TOOLCHAIN_FILE", "")
+            ):
+                found.append(m.group(1))
+    with contextlib.suppress(OSError, ValueError):
+        if m := _SDKCONFIG_TARGET_LINE.search(sdkconfig.read_text(encoding="utf-8")):
+            found.append(m.group(1))
+    return next((t for t in found if t and t != target), None)
+
+
+def _clean_foreign_target_tree() -> None:
+    """Clean a build configured for another IDF target, like idf.py set-target."""
+    variant = CORE.data.get(KEY_ESP32, {}).get(KEY_VARIANT)
+    if variant is None:
+        return
+    target = variant_to_idf_target(variant)
+    if (old := _foreign_idf_target(target)) is None:
+        return
+    from esphome.writer import clean_build
+
+    _LOGGER.info(
+        "IDF target changed from %s to %s, cleaning build files...", old, target
+    )
+    clean_build(clear_pio_cache=False)
+    if os.environ.get("ESPHOME_SKIP_CLEAN_BUILD"):
+        return
+    _reset_sdkconfig()
+
+
+def _reset_sdkconfig() -> None:
+    """Restart the project sdkconfig from ESPHome's own options."""
+    internal = CORE.relative_build_path(f"sdkconfig.{CORE.name}.esphomeinternal")
+    if internal.is_file():
+        shutil.copyfile(internal, CORE.relative_build_path(f"sdkconfig.{CORE.name}"))
+
+
 def _skip_bootloader() -> bool:
     """Whether this tree should not build a bootloader at all; per-run memo."""
     cache = _cache()
@@ -366,7 +425,9 @@ def _tool_env() -> dict[str, str]:
     return env
 
 
-def run_reconfigure(verbose: bool = False) -> int:
+def run_reconfigure(
+    verbose: bool = False, extra_env: dict[str, str] | None = None
+) -> int:
     """Run the CMake configure, with the arguments idf.py uses."""
     build_dir = _build_dir()
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -389,7 +450,7 @@ def run_reconfigure(verbose: bool = False) -> int:
     rc = run_build_tool(
         cmd,
         cwd=build_dir,
-        env=_tool_env(),
+        env={**_tool_env(), **(extra_env or {})},
         filter_lines=None if verbose else FILTER_IDF_LINES,
         log_path=log_path,
     )
@@ -428,21 +489,21 @@ def _build_jobs(config) -> int | None:
 
 
 def _run_ninja(
-    target: str,
-    *,
+    *targets: str,
     verbose: bool,
     jobs: int | None,
     progress: bool = False,
     extra_env: dict[str, str] | None = None,
 ) -> int:
-    """Build one ninja target, with the flags and env idf.py uses."""
+    """Build ninja targets in one run, with the flags and env idf.py uses."""
     cmd = [_get_idf_tool("ninja")]
     if jobs is not None:
         cmd += ["-j", str(jobs)]
     if verbose:
         cmd.append("-v")
-    cmd.append(target)
-    log_path = _build_dir() / "log" / f"ninja_{Path(target).name}_output.log"
+    cmd += targets
+    log_name = "_".join(Path(t).name for t in targets)
+    log_path = _build_dir() / "log" / f"ninja_{log_name}_output.log"
     rc = run_build_tool(
         cmd,
         cwd=_build_dir(),
@@ -452,7 +513,7 @@ def _run_ninja(
         log_path=log_path,
     )
     if rc != 0:
-        _LOGGER.error("ninja %s failed with exit code %d", target, rc)
+        _LOGGER.error("ninja %s failed with exit code %d", " ".join(targets), rc)
         _print_hints(log_path)
     return rc
 
@@ -514,23 +575,21 @@ def _sync_component_mirror() -> None:
 
 
 def _builtin_component_cache_path() -> Path | None:
-    """Cache file for this build's built-in component list.
+    """Cache file for this target's built-in component list.
 
     The file lives inside the extracted framework directory so it is
     discarded together with that exact checkout (re-extract, source
-    override, clean-all); the target and the EXCLUDE_COMPONENTS set name it.
-    The sdkconfig is not part of the key: IDF components register regardless
-    of CONFIG_* options and only gate their sources on them. A checkout
-    supplied through IDF_PATH is not managed by ESPHome and is never cached.
+    override, clean-all). The discovery configure registers every built-in
+    component, so the list serves any EXCLUDE_COMPONENTS set (the project
+    write drops the excluded names) and any sdkconfig (IDF components
+    register regardless of CONFIG_* options and only gate their sources on
+    them). A checkout supplied through IDF_PATH is not managed by ESPHome
+    and is never cached.
     """
     if not _esphome_manages_idf():
         return None
     target = variant_to_idf_target(CORE.data[KEY_ESP32][KEY_VARIANT])
-    excluded = CORE.cmake_args.get("EXCLUDE_COMPONENTS", "")
-    excluded_key = hashlib.sha256(excluded.encode()).hexdigest()[:12]
-    return (
-        _get_idf_path() / ".esphome_component_lists" / f"{target}-{excluded_key}.json"
-    )
+    return _get_idf_path() / ".esphome_component_lists" / f"{target}.json"
 
 
 def load_cached_builtin_components() -> list[str] | None:
@@ -608,6 +667,9 @@ def _configure_project(verbose: bool = False) -> int:
     if not discovered:
         _LOGGER.error("Component discovery found no built-in ESP-IDF components")
         return 1
+    # The discovery configure builds every IDF component, and their Kconfig
+    # selects (e.g. esp-tls turning TLS on) would otherwise stay in sdkconfig
+    _reset_sdkconfig()
     if (rc := _write_project_and_reconfigure(discovered, verbose)) != 0:
         _LOGGER.error("Reconfigure with discovered components failed")
         return rc
@@ -633,10 +695,9 @@ def has_outdated_files():
       already deletes ``dependencies.lock`` on a change but that signal
       gets lost as soon as the lock is missing.
     - ``exclude_components.esphomeinternal`` -- the resolved
-      EXCLUDE_COMPONENTS set. Excluded components never register in
-      ``project_description.json``, so re-including one needs a fresh
-      discovery pass before it can appear in the builtin-components
-      property that ``src`` REQUIRES.
+      EXCLUDE_COMPONENTS set. The builtin-components property that
+      ``src`` REQUIRES drops excluded names, so re-including one needs a
+      reconfigure to rebuild that property from the discovery list.
 
     We deliberately don't watch:
     - The top-level/src ``CMakeLists.txt`` -- ESPHome owns those, and
@@ -801,12 +862,12 @@ def run_compile(config, verbose: bool) -> int:
 
     Uses two-phase configure to auto-discover available components:
     1. If no previous build, configure with minimal REQUIRES to discover
-       components (skipped when a cached list for this IDF/target/exclusion
-       set exists)
+       components (skipped when a cached list for this IDF/target exists)
     2. Regenerate CMakeLists.txt with discovered components
     3. Run full build
     """
     jobs = _build_jobs(config)
+    _clean_foreign_target_tree()
     if need_reconfigure():
         if (rc := _configure_project(verbose)) != 0:
             return rc
@@ -845,10 +906,11 @@ def run_compile(config, verbose: bool) -> int:
 
     write_pch_checksum()
 
-    # idf.py's ``build size``, minus the second ``ninja all`` it runs first.
-    rc = _run_ninja("all", verbose=verbose, jobs=jobs, progress=True)
-    if rc == 0:
-        rc = _run_ninja("size", verbose=verbose, jobs=jobs, extra_env=_size_env())
+    # idf.py's ``build size`` in one ninja run; size needs the map, so it
+    # runs after the link.
+    rc = _run_ninja(
+        "all", "size", verbose=verbose, jobs=jobs, progress=True, extra_env=_size_env()
+    )
     if rc == 0:
         size_json = CORE.relative_build_path("build", "esp_idf_size.json")
         partitions = CORE.relative_build_path("partitions.csv")

@@ -1,6 +1,7 @@
 from esphome import automation
 import esphome.codegen as cg
 from esphome.components import i2c, sensor
+from esphome.components.const import CONF_TEMPERATURE_SENSOR
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ID,
@@ -18,7 +19,6 @@ from esphome.types import ConfigType
 DEPENDENCIES = ["i2c"]
 
 CONF_SOLUTION = "solution"
-CONF_TEMPERATURE_SENSOR = "temperature_sensor"
 
 ufire_ise_ns = cg.esphome_ns.namespace("ufire_ise")
 UFireISEComponent = ufire_ise_ns.class_(
@@ -56,17 +56,13 @@ async def to_code(config: ConfigType) -> None:
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 
-    if CONF_TEMPERATURE in config:
-        sens = await sensor.new_sensor(config[CONF_TEMPERATURE])
-        cg.add(var.set_temperature_sensor(sens))
+    sensors = sensor.sub_sensors(config)
+    await sensors(CONF_TEMPERATURE, var.set_temperature_sensor)
+    await sensors(CONF_PH, var.set_ph_sensor)
 
-    if CONF_PH in config:
-        sens = await sensor.new_sensor(config[CONF_PH])
-        cg.add(var.set_ph_sensor(sens))
-
-    if CONF_TEMPERATURE_SENSOR in config:
-        sens = await cg.get_variable(config[CONF_TEMPERATURE_SENSOR])
-        cg.add(var.set_temperature_sensor_external(sens))
+    await cg.add_variable(
+        var.set_external_temperature_sensor, config.get(CONF_TEMPERATURE_SENSOR)
+    )
 
     await i2c.register_i2c_device(var, config)
 
